@@ -13,3 +13,7 @@ frontend/dist/
 # Divers
 .env
 *.log
+
+# Outils IA
+.claude/
+frontend/venv/
