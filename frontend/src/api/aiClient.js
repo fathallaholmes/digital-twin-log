@@ -62,4 +62,32 @@ export const aiApi = {
   whatifTrain:     (nSamples = 5000) =>
     _request('POST', `/ai/whatif/train?n_samples=${nSamples}`),
   whatifInfo:      ()        => _request('GET', '/ai/whatif/info'),
+
+  // Route Optimization (OR-Tools VRP)
+  optimizeRoutes:   (missions, vehicles, opts = {}) =>
+    _request('POST', '/ai/optimize/routes', {
+      missions, vehicles,
+      departure_hour:     opts.departureHour    ?? 9,
+      weight_distance:    opts.weightDistance   ?? 0.4,
+      weight_time:        opts.weightTime       ?? 0.4,
+      weight_co2:         opts.weightCo2        ?? 0.2,
+      time_limit_seconds: opts.timeLimitSeconds ?? 3,
+    }),
+  optimizeDemo:     (nMissions = 10, nVehicles = 6, hour = 9) =>
+    _request('GET', `/ai/optimize/demo?n_missions=${nMissions}&n_vehicles=${nVehicles}&hour=${hour}`),
+  optimizeMatrix:   (hour = 9) =>
+    _request('GET', `/ai/optimize/distance-matrix?hour=${hour}`),
+
+  // Recommendation engine + bandit
+  recommendList:        (daysBack = 14, max = 20) =>
+    _request('GET', `/ai/recommend/list?days_back=${daysBack}&max_results=${max}`),
+  recommendFeedback:    (recId, feedback) =>
+    _request('POST', '/ai/recommend/feedback', { recommendation_id: recId, feedback }),
+  recommendBanditStats: () => _request('GET', '/ai/recommend/bandit-stats'),
+  recommendBanditReset: () => _request('POST', '/ai/recommend/bandit-reset'),
+
+  // NLG
+  nlgBanner:  (max = 5) => _request('GET', `/ai/nlg/banner?max_items=${max}`),
+  nlgNarrate: (kind, payload, level = 'card') =>
+    _request('POST', '/ai/nlg/narrate', { kind, payload, level }),
 };

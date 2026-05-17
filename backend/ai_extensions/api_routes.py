@@ -18,6 +18,7 @@ au fur et à mesure.
 from __future__ import annotations
 import asyncio
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -34,6 +35,9 @@ from .data.synthetic_dataset import (
 from .models import maintenance_predictive as mp
 from .models import anomaly_detector       as ad
 from .models import what_if_simulator      as wi
+from .decision import route_optimizer       as ro
+from .decision import recommendation_engine as re_engine
+from .nlg      import narrator              as nlg
 
 
 router = APIRouter(prefix="/ai", tags=["AI Extensions"])
@@ -410,3 +414,195 @@ def whatif_info():
         "n_train":      bundle["n_train"],
         "n_test":       bundle["n_test"],
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Bloc E — Optimisation tournées (OR-Tools VRP)
+# ═══════════════════════════════════════════════════════════════════════════════
+class MissionSchema(BaseModel):
+    id:        str
+    pickup:    str
+    delivery:  str
+    demand:    int = 1
+    priority:  int = 1
+
+class VehicleSlotSchema(BaseModel):
+    id:           str
+    depot:        str
+    vehicle_type: str = "Cargo 3.5t"
+    capacity:     int = 10
+
+class OptimizeRequest(BaseModel):
+    missions:           list[MissionSchema]
+    vehicles:           list[VehicleSlotSchema]
+    departure_hour:     int = 9
+    weight_distance:    float = 0.4
+    weight_time:        float = 0.4
+    weight_co2:         float = 0.2
+    time_limit_seconds: int = 5
+
+
+@router.post("/optimize/routes")
+def optimize_routes(req: OptimizeRequest):
+    """Lance l'optimisation OR-Tools sur un set de missions + véhicules."""
+    missions = [ro.Mission(**m.dict()) for m in req.missions]
+    vehicles = [ro.VehicleSlot(**v.dict()) for v in req.vehicles]
+
+    naive = ro.baseline_naive_cost(missions, vehicles, req.departure_hour)
+    res   = ro.optimize(
+        missions, vehicles,
+        departure_hour=req.departure_hour,
+        weight_distance=req.weight_distance,
+        weight_time=req.weight_time,
+        weight_co2=req.weight_co2,
+        time_limit_seconds=req.time_limit_seconds,
+    )
+
+    gain = {
+        "distance_pct":
+            round((1 - res.total_distance_km / naive["total_distance_km"]) * 100, 1)
+            if naive["total_distance_km"] else 0,
+        "duration_pct":
+            round((1 - res.total_duration_min / naive["total_duration_min"]) * 100, 1)
+            if naive["total_duration_min"] else 0,
+        "co2_pct":
+            round((1 - res.total_co2_kg / naive["total_co2_kg"]) * 100, 1)
+            if naive["total_co2_kg"] else 0,
+    }
+
+    return {
+        "feasible":           res.feasible,
+        "solver_status":      res.solver_status,
+        "objective":          res.objective_value,
+        "total_distance_km":  res.total_distance_km,
+        "total_duration_min": res.total_duration_min,
+        "total_co2_kg":       res.total_co2_kg,
+        "n_vehicles_used":    len(res.routes),
+        "n_vehicles_total":   len(vehicles),
+        "n_missions":         len(missions),
+        "unserved_missions":  res.unserved_missions,
+        "routes":             res.routes,
+        "computation_time_ms": res.computation_time_ms,
+        "baseline_naive":     naive,
+        "gain_vs_naive":      gain,
+    }
+
+
+@router.get("/optimize/demo")
+def optimize_demo(n_missions: int = 10, n_vehicles: int = 6, hour: int = 9):
+    """Lance une optimisation sur un scénario de démo aléatoire mais reproductible."""
+    missions = ro.generate_demo_missions(n_missions)
+    vehicles = ro.generate_demo_vehicles(n_vehicles)
+    req = OptimizeRequest(
+        missions=[MissionSchema(id=m.id, pickup=m.pickup, delivery=m.delivery,
+                                 demand=m.demand, priority=m.priority) for m in missions],
+        vehicles=[VehicleSlotSchema(id=v.id, depot=v.depot,
+                                     vehicle_type=v.vehicle_type, capacity=v.capacity)
+                  for v in vehicles],
+        departure_hour=hour, time_limit_seconds=3,
+    )
+    return optimize_routes(req)
+
+
+@router.get("/optimize/distance-matrix")
+def optimize_distance_matrix(hour: int = 9):
+    """Matrice distance + durée entre les 5 sièges (utile pour visualisation)."""
+    sieges = ro.SIEGES_LIST
+    mat = []
+    for a in sieges:
+        row = []
+        for b in sieges:
+            row.append({
+                "distance_km":  ro.get_distance_km(a, b),
+                "duration_min": ro.get_duration_min(a, b, hour),
+                "road_type":    ro.get_road_type(a, b) if a != b else "—",
+            })
+        mat.append(row)
+    return {"sieges": sieges, "matrix": mat, "hour_of_day": hour}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Bloc F — Recommendation Engine + Bandit ε-greedy
+# ═══════════════════════════════════════════════════════════════════════════════
+class FeedbackRequest(BaseModel):
+    recommendation_id: str
+    feedback:          str   # accepted | dismissed | ignored
+
+
+@router.get("/recommend/list")
+def recommend_list(
+    days_back:   int = Query(14, ge=1, le=60),
+    max_results: int = Query(20, ge=1, le=100),
+):
+    """Génère la liste des recommandations actives, triée par sévérité + bandit."""
+    _ensure_dataset_exists()
+    recs = re_engine.generate_recommendations(days_back=days_back, max_results=max_results)
+    # Enrichissement avec NLG
+    for r in recs:
+        r["nlg_banner"]   = nlg.narrate_recommendation(r, level="banner")
+        r["nlg_card"]     = nlg.narrate_recommendation(r, level="card")
+    return {
+        "count":           len(recs),
+        "recommendations": recs,
+        "generated_at":    datetime.utcnow().isoformat(),
+    }
+
+
+@router.post("/recommend/feedback")
+def recommend_feedback(req: FeedbackRequest):
+    """Enregistre le feedback utilisateur (accepted/dismissed/ignored) pour le bandit."""
+    return re_engine.record_feedback(req.recommendation_id, req.feedback)
+
+
+@router.get("/recommend/bandit-stats")
+def recommend_bandit_stats():
+    """Retourne ce que le bandit a appris des feedbacks."""
+    return re_engine.get_bandit_stats()
+
+
+@router.post("/recommend/bandit-reset")
+def recommend_bandit_reset():
+    """Réinitialise la mémoire du bandit (admin / démo)."""
+    re_engine.reset_bandit()
+    return {"status": "reset"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Bloc F — NLG Narrator (génération de phrases pour bandeau header + cards)
+# ═══════════════════════════════════════════════════════════════════════════════
+@router.get("/nlg/banner")
+def nlg_banner(max_items: int = Query(5, ge=1, le=10)):
+    """
+    Sélectionne les top alertes (recommandations + anomalies critiques)
+    et renvoie 1-N messages courts pour le bandeau scrolling du header.
+    Léger : ne refait pas les prédictions maintenance individuelles.
+    """
+    _ensure_dataset_exists()
+    # Source 1 : recommandations (déjà aggrégées maintenance+anomalies via règles)
+    recs = re_engine.generate_recommendations(max_results=15)
+    # Source 2 : anomalies critiques (les recos n'incluent que les conducteurs aggressifs)
+    anom = ad.scan_recent_anomalies(days_back=14, max_results=20).get("results", [])
+    # On passe une liste maint vide pour éviter le predict_all coûteux
+    items = nlg.build_banner_messages([], anom, recs, max_items=max_items)
+    return {"count": len(items), "items": items}
+
+
+class NarrateRequest(BaseModel):
+    kind:    str    # maintenance | anomaly | optimization | whatif | recommendation
+    payload: dict
+    level:   str = "card"  # banner | card | detailed
+
+
+@router.post("/nlg/narrate")
+def nlg_narrate(req: NarrateRequest):
+    """Génère une phrase NLG à partir d'un payload arbitraire."""
+    fn = {
+        "maintenance":    nlg.narrate_maintenance,
+        "anomaly":        nlg.narrate_anomaly,
+        "optimization":   nlg.narrate_optimization,
+        "whatif":         nlg.narrate_whatif,
+        "recommendation": nlg.narrate_recommendation,
+    }.get(req.kind)
+    if fn is None:
+        raise HTTPException(400, f"kind inconnu : {req.kind}")
+    return {"text": fn(req.payload, level=req.level)}

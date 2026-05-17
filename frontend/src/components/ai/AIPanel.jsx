@@ -7,16 +7,19 @@ import { useState } from 'react';
 import MaintenancePrediction from './MaintenancePrediction';
 import AnomalyAlerts         from './AnomalyAlerts';
 import WhatIfSimulator       from './WhatIfSimulator';
+import RouteOptimizer        from './RouteOptimizer';
+import Recommendations       from './Recommendations';
 
 const SECTIONS = [
+  { id: 'recommend',   label: 'Actions',     icon: '🎯', enabled: true },
   { id: 'maintenance', label: 'Maintenance', icon: '🔧', enabled: true },
   { id: 'anomalies',   label: 'Anomalies',   icon: '⚠️', enabled: true },
   { id: 'whatif',      label: 'What-If',     icon: '🔮', enabled: true },
-  { id: 'optimize',    label: 'Optimisation', icon: '🛣', enabled: false },
+  { id: 'optimize',    label: 'Tournées',    icon: '🛣', enabled: true },
 ];
 
 export default function AIPanel() {
-  const [section, setSection] = useState('maintenance');
+  const [section, setSection] = useState('recommend');
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-3 space-y-3">
@@ -47,14 +50,11 @@ export default function AIPanel() {
       </div>
 
       <div className="pt-1">
+        {section === 'recommend'   && <Recommendations />}
         {section === 'maintenance' && <MaintenancePrediction />}
         {section === 'anomalies'   && <AnomalyAlerts />}
         {section === 'whatif'      && <WhatIfSimulator />}
-        {section === 'optimize' && (
-          <p className="text-center text-slate-400 text-xs py-8">
-            Module en cours d'implémentation...
-          </p>
-        )}
+        {section === 'optimize'    && <RouteOptimizer />}
       </div>
     </div>
   );

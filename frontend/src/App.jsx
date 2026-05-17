@@ -1,4 +1,5 @@
 // /frontend/src/App.jsx
+import { useState }     from 'react';
 import MapView          from './components/MapView';
 import Dashboard        from './components/Dashboard';
 import SimulatorPanel   from './components/SimulatorPanel';
@@ -10,6 +11,8 @@ import AuthorizationBar from './components/AuthorizationBar';
 import LoginPage        from './components/LoginPage';
 import CollabIndicator  from './components/CollabIndicator';
 import AIPanel          from './components/ai/AIPanel';
+import NLGBanner        from './components/ai/NLGBanner';
+import DemoJuryMode     from './components/ai/DemoJuryMode';
 import { useStore }     from './store/useStore';
 import { useAuthStore } from './store/useAuthStore';
 import { useBackendSync } from './hooks/useBackendSync';
@@ -18,6 +21,7 @@ function MainApp() {
   const { setShowFleetManager, vehicles, rightTab, setRightTab, transportOrders } = useStore();
   const { user } = useAuthStore();
   const { ws }   = useBackendSync();
+  const [demoMode, setDemoMode] = useState(false);
 
   const enTransit    = vehicles.filter(v => v.en_transit).length;
   const activeOrders = transportOrders.filter(o => o.status === 'active').length;
@@ -49,12 +53,20 @@ function MainApp() {
             >
               🛠 Gérer la flotte
             </button>
+            <button
+              onClick={() => setDemoMode(true)}
+              className="text-xs px-3 py-1.5 rounded-md bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold shadow-md transition-all"
+              title="Mode présentation jury"
+            >
+              🎬 Mode Démo
+            </button>
             {/* Indicateur collaboratif */}
             <CollabIndicator wsRef={ws} />
           </div>
         </div>
       </header>
 
+      <NLGBanner />
       <AuthorizationBar />
 
       {/* ── Layout ── */}
@@ -111,6 +123,9 @@ function MainApp() {
         Digital Twin Maroc · TIYAOUIL Fathallah · MSID TA 2024-2026 · FSR
         {user && <span className="ml-3 text-slate-300">· connecté : <strong>{user.username}</strong></span>}
       </footer>
+
+      {/* Mode Démo Jury (plein écran) */}
+      {demoMode && <DemoJuryMode onClose={() => setDemoMode(false)} />}
     </div>
   );
 }

@@ -1,0 +1,23 @@
+{
+  "maintenance_overdue_schedule": {
+    "n_pulls": 0,
+    "n_accepted": 0,
+    "n_dismissed": 0,
+    "n_ignored": 0,
+    "score": 0.5
+  },
+  "maintenance_high_schedule": {
+    "n_pulls": 0,
+    "n_accepted": 0,
+    "n_dismissed": 0,
+    "n_ignored": 0,
+    "score": 0.5
+  },
+  "anomaly_aggressive_driver_training": {
+    "n_pulls": 1,
+    "n_accepted": 1,
+    "n_dismissed": 0,
+    "n_ignored": 0,
+    "score": 1.0
+  }
+}
