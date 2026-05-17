@@ -31,6 +31,9 @@ from .data.iot_generator import (
 from .data.synthetic_dataset import (
     default_fleet_specs, generate_historical, save_csvs, load_csv,
 )
+from .models import maintenance_predictive as mp
+from .models import anomaly_detector       as ad
+from .models import what_if_simulator      as wi
 
 
 router = APIRouter(prefix="/ai", tags=["AI Extensions"])
@@ -205,3 +208,205 @@ def _top_breakdown_pieces(breaks: list[dict], top_n: int = 5) -> list[dict]:
     from collections import Counter
     c = Counter(r["piece"] for r in breaks)
     return [{"piece": p, "count": n} for p, n in c.most_common(top_n)]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Bloc B — Maintenance prédictive (RandomForest)
+# ═══════════════════════════════════════════════════════════════════════════════
+class PredictRequest(BaseModel):
+    vehicle_id: str
+
+@router.post("/predict/maintenance")
+def predict_maintenance(req: PredictRequest):
+    """Prédit la probabilité de panne à 30 jours pour un véhicule."""
+    _ensure_dataset_exists()
+    return mp.predict_for_vehicle(req.vehicle_id)
+
+
+@router.get("/predict/maintenance/all")
+def predict_maintenance_all(
+    vehicle_ids: Optional[str] = Query(None, description="IDs séparés par virgule. Défaut : V001..V075"),
+    min_risk:    str           = Query("faible", regex="^(faible|modéré|élevé|critique)$"),
+):
+    """Prédictions pour la flotte, filtrées par niveau de risque minimum."""
+    _ensure_dataset_exists()
+    ids = ([v.strip() for v in vehicle_ids.split(",")] if vehicle_ids
+           else [f"V{i:03d}" for i in range(1, 76)])
+    preds = mp.predict_all(ids)
+
+    levels_order = {"faible": 0, "modéré": 1, "élevé": 2, "critique": 3}
+    min_lvl = levels_order[min_risk]
+    filtered = [p for p in preds
+                if "error" not in p and levels_order.get(p["risk_level"], 0) >= min_lvl]
+    filtered.sort(key=lambda p: p["probability"], reverse=True)
+
+    # Statistiques globales
+    by_level = {"faible": 0, "modéré": 0, "élevé": 0, "critique": 0}
+    for p in preds:
+        if "error" not in p:
+            by_level[p["risk_level"]] = by_level.get(p["risk_level"], 0) + 1
+
+    return {
+        "count":           len(filtered),
+        "total_evaluated": len(preds),
+        "by_risk_level":   by_level,
+        "predictions":     filtered,
+    }
+
+
+@router.post("/predict/maintenance/train")
+def predict_maintenance_train():
+    """Relance l'entraînement du modèle (≈ 1-2 secondes)."""
+    _ensure_dataset_exists()
+    df = mp.build_training_dataset()
+    out = mp.train_model(df, save=True)
+    mp.invalidate_cache()
+    return {
+        "status":  "trained",
+        "metrics": out["metrics"],
+        "feature_importance": dict(sorted(
+            out["feature_importance"].items(), key=lambda x: -x[1])[:8]),
+    }
+
+
+@router.get("/predict/maintenance/model-info")
+def predict_maintenance_info():
+    """Métadonnées du modèle actuellement chargé."""
+    bundle = mp._load_bundle()
+    return {
+        "trained_at":         bundle["trained_at"],
+        "horizon_days":       bundle["horizon_days"],
+        "window_days":        bundle["window_days"],
+        "metrics":            bundle["metrics"],
+        "feature_importance": dict(sorted(
+            bundle["feature_importance"].items(), key=lambda x: -x[1])),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Bloc C — Détection d'anomalies (Isolation Forest)
+# ═══════════════════════════════════════════════════════════════════════════════
+class AnomalyScoreRequest(BaseModel):
+    speed_avg:      float = 0
+    speed_max:      float = 0
+    hard_brake_n:   int   = 0
+    hard_accel_n:   int   = 0
+    sharp_corner_n: int   = 0
+    over_rev_n:     int   = 0
+    km_today:       float = 0
+
+
+@router.post("/anomaly/score")
+def anomaly_score(req: AnomalyScoreRequest):
+    """Score une session arbitraire (ex: agrégat de ticks live)."""
+    _ensure_dataset_exists()
+    return ad.score_features(req.dict())
+
+
+@router.get("/anomaly/vehicle/{vehicle_id}")
+def anomaly_vehicle(vehicle_id: str):
+    """Score la dernière journée connue d'un véhicule."""
+    _ensure_dataset_exists()
+    return ad.score_vehicle_last_day(vehicle_id)
+
+
+@router.get("/anomaly/scan")
+def anomaly_scan(
+    days_back:   int = Query(14, ge=1, le=180),
+    max_results: int = Query(50, ge=10, le=200),
+):
+    """
+    Scanne les `days_back` dernières journées de toute la flotte et retourne
+    les sessions les plus anormales (pire score par véhicule).
+    """
+    _ensure_dataset_exists()
+    return ad.scan_recent_anomalies(days_back=days_back, max_results=max_results)
+
+
+@router.post("/anomaly/train")
+def anomaly_train(contamination: float = Query(0.05, ge=0.01, le=0.30)):
+    """Réentraîne l'Isolation Forest."""
+    _ensure_dataset_exists()
+    out = ad.train_model(contamination=contamination, save=True)
+    ad.invalidate_cache()
+    return {"status": "trained", **out}
+
+
+@router.get("/anomaly/info")
+def anomaly_info():
+    """Métadonnées du modèle d'anomalies."""
+    bundle = ad._load()
+    return {
+        "trained_at":    bundle["trained_at"],
+        "contamination": bundle["contamination"],
+        "n_samples":     bundle["n_samples"],
+        "n_anomalies":   bundle["n_anomalies"],
+        "anomaly_rate":  bundle["anomaly_rate"],
+        "score_range":   [bundle["score_min"], bundle["score_max"]],
+        "feature_stats": bundle["stats"],
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Bloc D — What-If Simulator (LightGBM surrogate)
+# ═══════════════════════════════════════════════════════════════════════════════
+class WhatIfRequest(BaseModel):
+    config:             dict          # {siege: n_vehicles}
+    demand_multiplier:  float = 1.0
+    use_surrogate:      bool  = True  # False = modèle physique (légèrement plus lent)
+
+class WhatIfCompareRequest(BaseModel):
+    config_a:           dict
+    config_b:           dict
+    demand_multiplier:  float = 1.0
+    label_a:            str   = "Actuel"
+    label_b:            str   = "Proposé"
+
+
+@router.post("/whatif/simulate")
+def whatif_simulate(req: WhatIfRequest):
+    """Prédit les KPIs d'une configuration de flotte (≈ 5 ms via surrogate)."""
+    return {
+        "config":            req.config,
+        "demand_multiplier": req.demand_multiplier,
+        "kpis":              wi.predict(req.config, req.demand_multiplier, req.use_surrogate),
+        "model":             "surrogate" if req.use_surrogate else "physical",
+    }
+
+
+@router.post("/whatif/compare")
+def whatif_compare(req: WhatIfCompareRequest):
+    """Compare deux configurations côte à côte."""
+    return wi.compare(req.config_a, req.config_b, req.demand_multiplier,
+                      labels=(req.label_a, req.label_b))
+
+
+@router.get("/whatif/baseline")
+def whatif_baseline(n_per_siege: int = Query(15, ge=0, le=50)):
+    """Configuration de référence (15 véhicules/siège par défaut)."""
+    cfg = wi.get_baseline_config(n_per_siege)
+    kpis = wi.predict(cfg, 1.0)
+    return {"config": cfg, "kpis": kpis, "demand_multiplier": 1.0}
+
+
+@router.post("/whatif/train")
+def whatif_train(n_samples: int = Query(5000, ge=500, le=20000)):
+    """Réentraîne les 3 surrogate models (≈ 5-10 secondes)."""
+    out = wi.train_model(n_samples=n_samples, save=True)
+    wi.invalidate_cache()
+    return {"status": "trained", **out}
+
+
+@router.get("/whatif/info")
+def whatif_info():
+    """Métadonnées du modèle + importances de features."""
+    bundle = wi._load()
+    return {
+        "trained_at":   bundle["trained_at"],
+        "sieges":       bundle["sieges"],
+        "base_demand":  bundle["base_demand"],
+        "metrics":      bundle["metrics"],
+        "feature_importance": bundle["feature_importance"],
+        "n_train":      bundle["n_train"],
+        "n_test":       bundle["n_test"],
+    }

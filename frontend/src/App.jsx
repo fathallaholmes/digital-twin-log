@@ -9,6 +9,7 @@ import FleetManager     from './components/FleetManager';
 import AuthorizationBar from './components/AuthorizationBar';
 import LoginPage        from './components/LoginPage';
 import CollabIndicator  from './components/CollabIndicator';
+import AIPanel          from './components/ai/AIPanel';
 import { useStore }     from './store/useStore';
 import { useAuthStore } from './store/useAuthStore';
 import { useBackendSync } from './hooks/useBackendSync';
@@ -93,11 +94,16 @@ function MainApp() {
               className={`flex-1 py-2 transition-colors ${rightTab === 'history' ? 'bg-emerald-700 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
               📊 Historique
             </button>
+            <button onClick={() => setRightTab('ai')}
+              className={`flex-1 py-2 transition-colors ${rightTab === 'ai' ? 'bg-purple-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
+              🧠 IA
+            </button>
           </div>
 
           {rightTab === 'simulator' && <SimulatorPanel />}
           {rightTab === 'transport' && <TransportOrder />}
           {rightTab === 'history'   && <TripHistory />}
+          {rightTab === 'ai'        && <AIPanel />}
         </section>
       </main>
 
