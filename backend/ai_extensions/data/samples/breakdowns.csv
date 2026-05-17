@@ -1,0 +1,15 @@
+date,vehicle_id,vehicle_type,siege,piece,cause,km_at_break,km_since_maintenance
+2026-03-10,V002,VLTT,Casablanca,alternateur,Vieillissement + km élevés,67455.1,14129.0
+2026-05-08,V004,Cargo 3.5t,Casablanca,pneus,Conduite agressive + km,86681.9,20699.8
+2026-04-20,V005,Cargo 3.5t,Casablanca,turbo,Surchauffe + sur-régime,138108.2,17309.0
+2026-04-03,V006,M915 Conteneur,Casablanca,alternateur,Vieillissement + km élevés,83223.1,16952.6
+2026-03-07,V011,Cargo 3.5t,Casablanca,turbo,Surchauffe + sur-régime,162589.6,14832.5
+2026-04-24,V016,M915 Conteneur,Rabat,alternateur,Vieillissement + km élevés,93547.9,18072.1
+2026-05-11,V019,Cargo 3.5t,Rabat,plaquettes_frein,Freinages brusques répétés,150105.4,21644.4
+2026-03-19,V020,VLTT,Rabat,amortisseurs,Virages serrés + nids-de-poule,71194.6,14050.2
+2026-04-04,V023,Minicar 9p,Rabat,courroie_distrib,Régime moteur élevé prolongé,111032.8,15846.4
+2026-05-01,V025,M915 Conteneur,Rabat,embrayage,Accélérations brutales,74613.9,20754.4
+2026-04-29,V029,Cargo 3.5t,Rabat,turbo,Surchauffe + sur-régime,188889.9,20113.4
+2026-04-22,V039,Cargo 3.5t,Tanger,embrayage,Accélérations brutales,146185.7,19354.6
+2026-03-08,V053,Minicar 9p,Marrakech,plaquettes_frein,Freinages brusques répétés,54639.4,12302.2
+2026-04-01,V069,Minicar 9p,Fès,plaquettes_frein,Freinages brusques répétés,194677.1,15434.3

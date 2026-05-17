@@ -158,6 +158,10 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"],
 )
 
+# ── Extensions IA (module isolé : backend/ai_extensions/) ─────────────────────
+from ai_extensions.api_routes import router as ai_router
+app.include_router(ai_router)
+
 
 @app.on_event("startup")
 def seed_admin():
