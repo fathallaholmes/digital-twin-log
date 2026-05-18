@@ -162,6 +162,10 @@ app.add_middleware(
 from ai_extensions.api_routes import router as ai_router
 app.include_router(ai_router)
 
+# ── Couche Cyber (acquisition + persistence : backend/cyber/) ─────────────────
+from cyber.router import router as cyber_router
+app.include_router(cyber_router)
+
 
 @app.on_event("startup")
 def seed_admin():
