@@ -13,6 +13,7 @@ import CollabIndicator  from './components/CollabIndicator';
 import AIPanel          from './components/ai/AIPanel';
 import NLGBanner        from './components/ai/NLGBanner';
 import DemoJuryMode     from './components/ai/DemoJuryMode';
+import CyberConsole     from './components/cyber/CyberConsole';
 import { useStore }     from './store/useStore';
 import { useAuthStore } from './store/useAuthStore';
 import { useBackendSync } from './hooks/useBackendSync';
@@ -21,7 +22,8 @@ function MainApp() {
   const { setShowFleetManager, vehicles, rightTab, setRightTab, transportOrders } = useStore();
   const { user } = useAuthStore();
   const { ws }   = useBackendSync();
-  const [demoMode, setDemoMode] = useState(false);
+  const [demoMode,     setDemoMode]     = useState(false);
+  const [cyberConsole, setCyberConsole] = useState(false);
 
   const enTransit    = vehicles.filter(v => v.en_transit).length;
   const activeOrders = transportOrders.filter(o => o.status === 'active').length;
@@ -52,6 +54,13 @@ function MainApp() {
               className="text-xs px-3 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 text-white font-medium"
             >
               🛠 Gérer la flotte
+            </button>
+            <button
+              onClick={() => setCyberConsole(true)}
+              className="text-xs px-3 py-1.5 rounded-md bg-gradient-to-r from-blue-700 to-cyan-700 hover:from-blue-800 hover:to-cyan-800 text-white font-medium shadow-md"
+              title="Cyber Layer — Saisies + Capteurs + Timeline"
+            >
+              🛰 Cyber
             </button>
             <button
               onClick={() => setDemoMode(true)}
@@ -126,6 +135,9 @@ function MainApp() {
 
       {/* Mode Démo Jury (plein écran) */}
       {demoMode && <DemoJuryMode onClose={() => setDemoMode(false)} />}
+
+      {/* Cyber Console (modal) */}
+      {cyberConsole && <CyberConsole onClose={() => setCyberConsole(false)} />}
     </div>
   );
 }
